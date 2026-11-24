@@ -5,7 +5,10 @@ COMPOSE = docker compose
 aide:
 	@grep -E '^[a-z0-9-]+:.*## ' Makefile | sed 's/:.*## /\t/'
 
-donnees: ## génère comptes, agents et 60 jours d'historique dans ./data (≈ 30 s, 90 Mo)
+preparer-dossiers: ## crée les dossiers d'agents propres et de quarantaine
+	mkdir -p data/agents_propres data/quarantaine
+
+donnees: preparer-dossiers ## génère comptes, agents et 60 jours d'historique dans ./data (≈ 30 s, 90 Mo)
 	$(PY) generateur/sentinelle_gen.py init --sortie data
 
 agents-du-jour: ## fichier nocturne des agents (JOUR=AAAA-MM-JJ)
@@ -23,7 +26,7 @@ j3: ## RAG
 j4: ## streaming (Kafka, Connect, Schema Registry, Flink, générateur)
 	$(COMPOSE) --profile streaming up -d
 	@echo "Enregistrer le connecteur CDC :  make cdc"
-j5: ## orchestration
+j5: preparer-dossiers ## orchestration
 	$(COMPOSE) --profile orchestration up -d
 j6: ## ML + restitution
 	$(COMPOSE) --profile ml --profile bi up -d
@@ -45,4 +48,4 @@ tests: ## lance les tests
 arret: ## arrête tout (les volumes sont conservés)
 	$(COMPOSE) --profile lakehouse --profile stores --profile rag --profile streaming --profile orchestration --profile ml --profile bi --profile lineage down
 
-.PHONY: aide donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 cdc topics scenario tests arret
+.PHONY: aide preparer-dossiers donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 cdc topics scenario tests arret

@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "Alerte",
+  "namespace": "cm.dallapay.sentinelle",
+  "doc": "Alerte produite par Flink ou par l'API de scoring (topic alertes)",
+  "fields": [
+    {"name": "tx_id", "type": "string"},
+    {"name": "compte_id", "type": "string"},
+    {"name": "ts_tx", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "ts_alerte", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "source", "type": {"type": "enum", "name": "Source", "symbols": ["REGLE", "MODELE", "GRAPHE"]}},
+    {"name": "regle", "type": ["null", "string"], "default": null},
+    {"name": "score", "type": ["null", "double"], "default": null},
+    {"name": "decision", "type": {"type": "enum", "name": "Decision", "symbols": ["ACCEPTER", "VERIFIER", "BLOQUER"]}}
+  ]
+}

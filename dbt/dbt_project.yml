@@ -1,0 +1,9 @@
+name: sentinelle
+version: "1.0.0"
+profile: sentinelle
+model-paths: ["models"]
+seed-paths: ["seeds"]
+models:
+  sentinelle:
+    staging: {+materialized: view}
+    marts: {+materialized: table}

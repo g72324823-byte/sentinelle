@@ -1,0 +1,268 @@
+# Projet Sentinelle — pile complète découpée en profils.
+#
+# Une machine de 16 Go ne fait pas tourner toute la pile en même temps.
+# Lancez uniquement le profil du jalon en cours, par exemple :
+#   docker compose --profile lakehouse up -d        (J1)
+#   docker compose --profile stores up -d           (J2)
+#   docker compose --profile rag up -d              (J3)
+#   docker compose --profile streaming up -d        (J4)
+#   docker compose --profile orchestration up -d    (J5)
+#   docker compose --profile ml --profile bi up -d  (J6)
+# Les services sans profil (MinIO, PostgreSQL) démarrent toujours.
+# Mémoire indicative par profil : voir README.md.
+
+x-minio-env: &minio-env
+  AWS_ACCESS_KEY_ID: ${MINIO_USER}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD}
+  AWS_REGION: us-east-1
+  AWS_ENDPOINT_URL: http://minio:9000
+
+services:
+  # ---------------------------------------------------------------- socle
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  minio-init:                 # crée les buckets puis s'arrête
+    image: minio/mc:latest
+    depends_on: {minio: {condition: service_healthy}}
+    environment:
+      MINIO_USER: ${MINIO_USER}
+      MINIO_PASSWORD: ${MINIO_PASSWORD}
+    entrypoint: >
+      sh -c "mc alias set s3 http://minio:9000 $$MINIO_USER $$MINIO_PASSWORD &&
+             mc mb -p s3/lakehouse s3/brut s3/mlflow &&
+             mc cp --recursive /data/historique/ s3/brut/historique/ &&
+             mc cp --recursive /data/agents/ s3/brut/agents/"
+    volumes: [./data:/data:ro]
+
+  postgres:                   # base opérationnelle des comptes (source du CDC)
+    image: postgres:17
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4"]
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: dallapay
+    ports: ["5432:5432"]
+    volumes:
+      - pg:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./data/comptes.csv:/data/comptes.csv:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "dallapay"]
+      interval: 5s
+      retries: 20
+
+  # ---------------------------------------------------------- J1 lakehouse
+  iceberg-rest:               # catalogue Iceberg REST, données dans MinIO
+    image: apache/iceberg-rest-fixture:latest
+    profiles: [lakehouse, bi, orchestration]
+    environment:
+      <<: *minio-env
+      CATALOG_WAREHOUSE: s3://lakehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+    ports: ["8181:8181"]
+    depends_on: [minio]
+
+  spark:                      # Spark 4 en local[*] + Jupyter
+    build: ./spark
+    profiles: [lakehouse]
+    environment:
+      <<: *minio-env
+      SPARK_DRIVER_MEMORY: 3g
+    ports: ["8888:8888", "4040:4040"]
+    volumes: [./spark:/opt/sentinelle/spark, ./data:/data:ro]
+    depends_on: [iceberg-rest]
+
+  # ---------------------------------------------------- J2 bases spécialisées
+  valkey:                     # features en ligne (clé = compte)
+    image: valkey/valkey:9
+    profiles: [stores, streaming, ml]
+    ports: ["6379:6379"]
+
+  neo4j:                      # graphe des virements
+    image: neo4j:latest
+    profiles: [stores]
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512M
+    ports: ["7474:7474", "7687:7687"]
+    volumes: [neo4j:/data, ./data:/import:ro]
+
+  # ------------------------------------------------------------------ J3 RAG
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: [rag]
+    ports: ["6333:6333"]
+    volumes: [qdrant:/qdrant/storage]
+
+  # ------------------------------------------------------------ J4 streaming
+  kafka:
+    image: apache/kafka:4.3.0
+    profiles: [streaming, ml]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNE://:29092,EXTERNE://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNE://kafka:29092,EXTERNE://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNE:PLAINTEXT,EXTERNE:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNE
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_HEAP_OPTS: -Xmx1g
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      retries: 10
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:8.3.3
+    profiles: [streaming]
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_HEAP_OPTS: -Xmx256m
+    ports: ["8081:8081"]
+    depends_on: {kafka: {condition: service_healthy}}
+
+  connect:                    # Kafka Connect + connecteur Debezium PostgreSQL
+    image: quay.io/debezium/connect:3.7
+    profiles: [streaming]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: connect-sentinelle
+      CONFIG_STORAGE_TOPIC: _connect_config
+      OFFSET_STORAGE_TOPIC: _connect_offsets
+      STATUS_STORAGE_TOPIC: _connect_status
+      HEAP_OPTS: -Xmx512m
+    ports: ["8083:8083"]
+    depends_on:
+      kafka: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+
+  flink-jobmanager:
+    build: ./flink
+    profiles: [streaming]
+    command: jobmanager
+    ports: ["8082:8081"]      # interface web Flink sur http://localhost:8082
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 1024m
+        execution.checkpointing.interval: 30s
+        state.backend.type: rocksdb
+        execution.checkpointing.dir: s3://lakehouse/_checkpoints
+        s3.endpoint: http://minio:9000
+        s3.path.style.access: true
+        s3.access-key: ${MINIO_USER}
+        s3.secret-key: ${MINIO_PASSWORD}
+    volumes: [./flink/sql:/opt/sentinelle/sql]
+
+  flink-taskmanager:
+    build: ./flink
+    profiles: [streaming]
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 1536m
+        s3.endpoint: http://minio:9000
+        s3.path.style.access: true
+        s3.access-key: ${MINIO_USER}
+        s3.secret-key: ${MINIO_PASSWORD}
+    depends_on: [flink-jobmanager]
+
+  generateur:                 # flux continu de transactions vers Kafka
+    build: ./generateur
+    profiles: [streaming, ml]
+    command: >
+      python sentinelle_gen.py flux --vers kafka --bootstrap kafka:29092
+      --debit ${DEBIT:-200} --pg postgresql://postgres:${PG_PASSWORD}@postgres:5432/dallapay
+    environment: {SCHEMA_AVRO: /schemas/transaction.avsc}
+    volumes: [./schemas:/schemas:ro]
+    depends_on: {kafka: {condition: service_healthy}}
+
+  # -------------------------------------------------------- J5 orchestration
+  airflow:                    # mode standalone : planificateur + API + interface dans un conteneur
+    build: ./airflow
+    profiles: [orchestration]
+    command: standalone
+    environment:
+      <<: *minio-env
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+      OPENLINEAGE_URL: http://marquez:5000
+    ports: ["8080:8080"]
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./dbt:/opt/sentinelle/dbt
+      - ./data:/data:ro
+
+  marquez:                    # bonus J5 : lignage OpenLineage
+    image: marquezproject/marquez:latest
+    profiles: [lineage]
+    ports: ["5002:5000", "5001:5001"]
+
+  # ----------------------------------------------------------------- J6 ML
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.18.0
+    profiles: [ml]
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --artifacts-destination s3://mlflow/
+    environment: *minio-env
+    ports: ["5000:5000"]
+    volumes: [mlflow:/mlflow]
+
+  api:                        # FastAPI : POST /score
+    build: ./ml/api
+    profiles: [ml]
+    environment:
+      <<: *minio-env
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODELE_URI: models:/sentinelle-fraude@champion
+      VALKEY_URL: redis://valkey:6379/0
+    ports: ["8000:8000"]
+    depends_on: [mlflow, valkey]
+
+  # ----------------------------------------------------------------- J6 BI
+  superset:
+    build: ./bi/superset
+    profiles: [bi]
+    environment:
+      <<: *minio-env
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD}
+    ports: ["8088:8088"]
+    volumes: [superset:/app/superset_home, ./data:/data:ro]
+
+  streamlit:                  # console des analystes de la fraude
+    build: ./bi/streamlit
+    profiles: [bi]
+    environment:
+      PG_DSN: postgresql://postgres:${PG_PASSWORD}@postgres:5432/dallapay
+      KAFKA_BOOTSTRAP: kafka:29092
+      API_URL: http://api:8000
+    ports: ["8501:8501"]
+
+volumes: {minio: {}, pg: {}, neo4j: {}, qdrant: {}, mlflow: {}, superset: {}}

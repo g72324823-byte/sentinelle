@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "Transaction",
+  "namespace": "cm.dallapay.sentinelle",
+  "doc": "Transaction mobile money émise par le générateur (topic transactions.brutes)",
+  "fields": [
+    {"name": "tx_id", "type": "string"},
+    {"name": "ts", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "compte_id", "type": "string"},
+    {"name": "type", "type": {"type": "enum", "name": "TypeTx",
+      "symbols": ["PAIEMENT", "TRANSFERT", "RETRAIT", "DEPOT", "FACTURE", "RECHARGE"]}},
+    {"name": "montant", "type": "double", "doc": "en XAF"},
+    {"name": "devise", "type": "string", "default": "XAF"},
+    {"name": "compte_dest", "type": ["null", "string"], "default": null},
+    {"name": "agent_id", "type": ["null", "string"], "default": null},
+    {"name": "pays", "type": "string"},
+    {"name": "ville", "type": "string"},
+    {"name": "canal", "type": {"type": "enum", "name": "Canal", "symbols": ["APP", "USSD"]}},
+    {"name": "device_id", "type": "string"}
+  ]
+}

@@ -1,0 +1,8 @@
+# DuckDB local ; en J5 vous pouvez écrire la couche or dans Iceberg (extension iceberg de DuckDB)
+sentinelle:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', 'sentinelle.duckdb') }}"
+      threads: 4

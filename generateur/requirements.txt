@@ -1,0 +1,5 @@
+numpy>=2.2
+pandas>=2.3
+pyarrow>=20
+confluent-kafka>=2.11
+psycopg[binary]>=3.2

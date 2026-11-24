@@ -1,0 +1,7 @@
+fastapi>=0.120
+uvicorn[standard]>=0.38
+mlflow-skinny>=3.18
+scikit-learn>=1.7
+pandas>=2.3
+redis>=6
+boto3>=1.40

@@ -1,0 +1,9 @@
+version: 2
+sources:
+  - name: brut
+    tables:
+      - name: transactions
+        meta: {external_location: "read_parquet('{{ env_var('DATA_DIR', '/data') }}/historique/*.parquet')"}
+      - name: agents
+        description: Fichier CSV des agents et marchands déposé chaque nuit
+        meta: {external_location: "read_csv_auto('{{ env_var('DATA_DIR', '/data') }}/agents/*.csv', filename = true)"}

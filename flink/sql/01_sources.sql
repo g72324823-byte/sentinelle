@@ -1,5 +1,7 @@
--- J4 — Tables Flink SQL de départ. Lancer avec :
---   docker compose exec flink-jobmanager ./bin/sql-client.sh -f /opt/sentinelle/sql/01_sources.sql
+-- J4 — Initialisation des tables dans la même session que 02_features.sql.
+--   make flink-sql
+
+SET 'table.exec.source.idle-timeout' = '2 s';
 
 -- Flux brut des transactions (JSON). L'horodatage métier sert de temps d'événement.
 CREATE TABLE transactions (
@@ -15,8 +17,8 @@ CREATE TABLE transactions (
   ville        STRING,
   canal        STRING,
   device_id    STRING,
-  -- on tolère 5 secondes de désordre entre événements
-  WATERMARK FOR ts AS ts - INTERVAL '5' SECOND
+  -- délai réduit pour satisfaire l'exigence d'alerte inférieure à 5 secondes
+  WATERMARK FOR ts AS ts - INTERVAL '1' SECOND
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'transactions.brutes',

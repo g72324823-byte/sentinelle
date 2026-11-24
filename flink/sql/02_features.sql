@@ -1,4 +1,5 @@
--- J4 — Features par fenêtres et règles d'alerte (À COMPLÉTER)
+-- J4 — Features par fenêtres et règles d'alerte (À COMPLÉTER).
+-- Exécuter après 01_sources.sql dans la même session sql-client (make flink-sql).
 
 -- Exemple fourni : nombre de transactions par compte sur une fenêtre glissante
 -- de 10 minutes, recalculée toutes les minutes.

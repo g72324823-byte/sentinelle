@@ -26,6 +26,9 @@ j3: ## RAG
 j4: ## streaming (Kafka, Connect, Schema Registry, Flink, générateur)
 	$(COMPOSE) --profile streaming up -d
 	@echo "Enregistrer le connecteur CDC :  make cdc"
+
+flink-sql: ## initialise les tables et charge les features dans une session SQL Flink
+	$(COMPOSE) --profile streaming exec flink-jobmanager ./bin/sql-client.sh -i /opt/sentinelle/sql/01_sources.sql -f /opt/sentinelle/sql/02_features.sql
 j5: preparer-dossiers ## orchestration
 	$(COMPOSE) --profile orchestration up -d
 j6: ## ML + restitution
@@ -48,4 +51,4 @@ tests: ## lance les tests
 arret: ## arrête tout (les volumes sont conservés)
 	$(COMPOSE) --profile lakehouse --profile stores --profile rag --profile streaming --profile orchestration --profile ml --profile bi --profile lineage down
 
-.PHONY: aide preparer-dossiers donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 cdc topics scenario tests arret
+.PHONY: aide preparer-dossiers donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 flink-sql cdc topics scenario tests arret

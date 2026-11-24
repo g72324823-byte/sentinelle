@@ -223,7 +223,29 @@ services:
   marquez:                    # bonus J5 : lignage OpenLineage
     image: marquezproject/marquez:latest
     profiles: [lineage]
+    environment:
+      MARQUEZ_PORT: 5000
+      MARQUEZ_ADMIN_PORT: 5001
+      POSTGRES_HOST: marquez-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${MARQUEZ_DB}
+      POSTGRES_USER: ${MARQUEZ_DB_USER}
+      POSTGRES_PASSWORD: ${MARQUEZ_DB_PASSWORD}
     ports: ["5002:5000", "5001:5001"]
+    depends_on: {marquez-db: {condition: service_healthy}}
+
+  marquez-db:
+    image: postgres:17
+    profiles: [lineage]
+    environment:
+      POSTGRES_DB: ${MARQUEZ_DB}
+      POSTGRES_USER: ${MARQUEZ_DB_USER}
+      POSTGRES_PASSWORD: ${MARQUEZ_DB_PASSWORD}
+    volumes: [marquez-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 20
 
   # ----------------------------------------------------------------- J6 ML
   mlflow:
@@ -270,4 +292,4 @@ services:
       API_URL: http://api:8000
     ports: ["8501:8501"]
 
-volumes: {minio: {}, pg: {}, neo4j: {}, qdrant: {}, mlflow: {}, superset: {}, iceberg: {}}
+volumes: {minio: {}, pg: {}, neo4j: {}, qdrant: {}, mlflow: {}, superset: {}, iceberg: {}, marquez-db: {}}

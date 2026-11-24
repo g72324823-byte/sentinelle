@@ -36,7 +36,12 @@ async def demarrage(app: FastAPI):
     uri = os.environ.get("MODELE_URI")
     if uri:
         import mlflow
-        ETAT["modele"] = mlflow.sklearn.load_model(uri)   # chargé une seule fois
+        modele = mlflow.sklearn.load_model(uri)   # chargé une seule fois
+        get_params = getattr(modele, "get_params", None)
+        set_params = getattr(modele, "set_params", None)
+        if callable(get_params) and callable(set_params) and "n_jobs" in get_params(deep=True):
+            set_params(n_jobs=1)
+        ETAT["modele"] = modele
         ETAT["version"] = uri
     yield
 

@@ -67,11 +67,13 @@ services:
     profiles: [lakehouse, bi, orchestration]
     environment:
       <<: *minio-env
+      CATALOG_URI: jdbc:sqlite:file:/data/catalog.db
       CATALOG_WAREHOUSE: s3://lakehouse/
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
     ports: ["8181:8181"]
+    volumes: [iceberg:/data]
     depends_on: [minio]
 
   spark:                      # Spark 4 en local[*] + Jupyter
@@ -265,4 +267,4 @@ services:
       API_URL: http://api:8000
     ports: ["8501:8501"]
 
-volumes: {minio: {}, pg: {}, neo4j: {}, qdrant: {}, mlflow: {}, superset: {}}
+volumes: {minio: {}, pg: {}, neo4j: {}, qdrant: {}, mlflow: {}, superset: {}, iceberg: {}}

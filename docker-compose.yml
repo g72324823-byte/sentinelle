@@ -33,7 +33,7 @@ services:
       retries: 10
 
   minio-init:                 # crée les buckets puis s'arrête
-    image: minio/mc:latest
+    build: ./minio/mc
     depends_on: {minio: {condition: service_healthy}}
     environment:
       MINIO_USER: ${MINIO_USER}

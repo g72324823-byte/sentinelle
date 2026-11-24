@@ -34,6 +34,9 @@ j5: preparer-dossiers ## orchestration
 j6: ## ML + restitution
 	$(COMPOSE) --profile ml --profile bi up -d
 
+demo: ## démonstration complète (streaming, ML, BI et RAG)
+	$(COMPOSE) --profile streaming --profile ml --profile bi --profile rag up -d
+
 cdc: ## enregistre le connecteur Debezium des comptes
 	set -a; . ./.env; set +a; envsubst < connect/debezium-comptes.json | curl -fsS -X POST -H "Content-Type: application/json" --data @- http://localhost:8083/connectors
 
@@ -51,4 +54,4 @@ tests: ## lance les tests
 arret: ## arrête tout (les volumes sont conservés)
 	$(COMPOSE) --profile lakehouse --profile stores --profile rag --profile streaming --profile orchestration --profile ml --profile bi --profile lineage down
 
-.PHONY: aide preparer-dossiers donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 flink-sql cdc topics scenario tests arret
+.PHONY: aide preparer-dossiers donnees agents-du-jour procedures j1 j2 j3 j4 j5 j6 demo flink-sql cdc topics scenario tests arret

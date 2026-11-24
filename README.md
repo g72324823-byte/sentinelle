@@ -46,6 +46,12 @@ Ne lancez que le profil du jalon en cours (`make arret` entre deux jalons).
 | `orchestration` | + Airflow (standalone), catalogue Iceberg | 2,5 Go |
 | `ml` + `bi` | + MLflow, API, Kafka, Valkey, générateur, Superset, Streamlit | 6 Go |
 
+### Démonstration complète
+
+`make demo` lance les profils `streaming`, `ml`, `bi` et `rag` (environ 9 à 10 Go de mémoire).
+Avant de la lancer, arrêtez Spark et Neo4j pour libérer de la mémoire :
+`docker compose stop spark neo4j`.
+
 ## Commandes utiles du générateur
 
 ```bash
